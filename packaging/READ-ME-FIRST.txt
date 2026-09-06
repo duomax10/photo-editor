@@ -1,0 +1,73 @@
+Photo Timestamp Editor
+======================
+
+Shifts the date and time on a whole folder of photos at once - handy when the
+camera was set to the wrong time zone.
+
+
+HOW TO RUN IT
+-------------
+
+1. Extract this whole folder somewhere first - your Desktop, Documents, or a
+   USB stick. Do not run it from inside the ZIP; Windows only unpacks part of
+   it and the program will not start.
+
+2. Double-click PhotoTimestampEditor.exe
+
+
+"WINDOWS PROTECTED YOUR PC"
+--------------------------
+
+The first launch may show a blue box saying "Windows protected your PC". This
+appears for any program that has not been signed with a paid certificate. It is
+not a virus warning.
+
+To continue:  click "More info", then "Run anyway".
+
+You should only have to do this once.
+
+
+HOW TO USE IT
+-------------
+
+1. Click Browse and pick the folder your photos are in.
+2. Set the shift. For a time-zone mistake use the Hours box - if the camera was
+   five hours ahead, set -5. The -1h / +1h buttons handle daylight saving.
+3. Look at the preview table. It shows every photo's current and new date
+   before anything is changed.
+4. Click "Apply to all photos".
+5. If it was not what you wanted, click "Undo last change".
+
+
+IS THIS SAFE FOR MY PHOTOS?
+---------------------------
+
+Yes. The dates inside a photo are stored as fixed-length text, so the program
+simply overwrites those characters where they already sit.
+
+  - No photo is copied, moved, replaced or deleted.
+  - No image is re-compressed, so there is no loss of quality.
+  - File sizes do not change, and nothing outside the date is touched.
+  - Before writing, each file is re-checked; if anything changed on disk in the
+    meantime, that file is skipped and nothing is written to it.
+  - Every change can be undone.
+
+
+WHERE ARE MY SETTINGS KEPT?
+---------------------------
+
+In the "data" folder next to the program, because this is the portable build.
+Nothing is written to your Windows user profile or the registry, so you can
+delete this folder and no trace is left behind.
+
+Undo history lives in data\undo. The last 50 changes are kept.
+
+
+WHAT FILES DOES IT HANDLE?
+--------------------------
+
+JPEG, HEIC/HEIF, TIFF, PNG, and raw files (CR2, NEF, ARW, DNG, ORF, RW2, PEF,
+SRW, RAF). Photos with no date information inside them still get their Windows
+file dates shifted; the preview says so per file.
+
+Only the folder you pick is processed. Subfolders are left alone.

@@ -50,24 +50,57 @@ file dates — there is no re-encoding step to worry about.
 Files with no readable EXIF still get their file dates shifted; the preview
 table says so per file.
 
-## Running it
+## Getting it onto a Windows PC
 
-Double-click **`run.bat`**. The first run creates a virtual environment and
-installs PySide6; later runs start straight away. You need
-[Python 3.10 or newer](https://www.python.org/downloads/windows/) installed
-with "Add python.exe to PATH" ticked.
+### The portable build (what most people want)
 
-To run it by hand instead:
+Extract the ZIP anywhere and double-click `PhotoTimestampEditor.exe`. There is
+no installer, no Python, and no download on first run.
+
+* Opens in about a second — the folder build doesn't unpack itself to a temp
+  directory the way a single-file `.exe` does.
+* Fully portable: settings and undo history go in the `data` folder next to the
+  program, not into your user profile or the registry. Run it from a USB stick
+  and delete the folder afterwards; nothing is left behind.
+* Extract the folder *before* running it. Double-clicking the `.exe` from
+  inside the ZIP only unpacks part of it and the program won't start.
+
+The first launch shows **"Windows protected your PC"**. That box appears for
+any program without a paid code-signing certificate — click **More info →
+Run anyway**. It should only ask once.
+
+### Building the ZIP
+
+You need [Python 3.10 or newer](https://www.python.org/downloads/windows/) on
+the machine doing the build (with "Add python.exe to PATH" ticked). Nobody you
+give the ZIP to needs it.
+
+Double-click **`build_windows.bat`**. It sets up an isolated build environment,
+runs PyInstaller, and leaves you with:
+
+```
+dist\PhotoTimestampEditor\                        the folder to run
+dist\PhotoTimestampEditor-1.0.0-windows-x64.zip   the folder, zipped, to hand out
+```
+
+The build strips out everything Qt ships that a widgets app never touches —
+QtWebEngine alone is 195 MB — which takes the bundle down from roughly 650 MB
+to well under 100 MB on Windows.
+
+### Running from source
+
+For development, or if you'd rather not build. Double-click **`run.bat`**: it
+creates a virtual environment, installs PySide6, and launches. The first run
+takes a minute; later ones start immediately. By hand:
 
 ```
 pip install -r requirements.txt
 python -m photo_timestamp_editor
 ```
 
-### Building a standalone .exe
-
-Run **`build_exe.bat`**. It produces `dist\PhotoTimestampEditor.exe`, a single
-file that runs on machines with no Python installed.
+`requirements.txt` asks for `PySide6-Essentials` rather than the full `PySide6`
+— same widgets, without the WebEngine/3D/multimedia payload this app has no use
+for.
 
 ## How to use it
 
@@ -82,9 +115,11 @@ file that runs on machines with no Python installed.
 5. **Undo** if it wasn't what you wanted. The button restores the most recent
    change, exactly.
 
-Undo logs are kept in `%LOCALAPPDATA%\PhotoTimestampEditor\undo` — outside your
-photo folder, so nothing is ever added to the folder you are working on. The
-last 50 are retained.
+Undo logs are kept outside your photo folder, so nothing is ever added to the
+folder you are working on. The last 50 are retained. They live in the `data`
+folder next to the program in the portable build, and in
+`%LOCALAPPDATA%\PhotoTimestampEditor` otherwise — deleting `portable.txt` from
+the app folder switches it to the latter.
 
 ## Notes and limits
 
@@ -116,4 +151,9 @@ keeps PNG chunk CRCs valid, and reverses exactly.
 | `filetimes.py` | Reads and writes file dates, including Windows creation time. |
 | `core.py` | Scans a folder, plans a shift, applies it, undoes it. |
 | `undo_store.py` | Saves undo records between sessions. |
+| `paths.py` | Decides where settings and undo logs go (portable or AppData). |
 | `gui.py` | The PySide6 window. |
+
+`packaging/` holds the PyInstaller spec and the text file shipped inside the
+ZIP; `tools/make_icon.py` regenerates the app icon and is only needed if the
+icon design changes.

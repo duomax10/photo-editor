@@ -3,26 +3,19 @@
 from __future__ import annotations
 
 import json
-import os
-import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
 from .core import UndoRecord
+from .paths import data_directory
 
 MAX_RECORDS = 50
 
 
 def undo_directory() -> Path:
     """Where undo logs live, outside the photo folder so nothing is added to it."""
-    if sys.platform == "win32":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    directory = base / "PhotoTimestampEditor" / "undo"
+    directory = data_directory() / "undo"
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 

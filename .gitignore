@@ -1,7 +1,11 @@
 __pycache__/
 *.py[cod]
 .venv/
+.venv-build/
 build/
 dist/
-*.spec
 .pytest_cache/
+
+# PyInstaller writes throwaway specs next to the project; the real one lives
+# in packaging/ and is committed.
+/*.spec

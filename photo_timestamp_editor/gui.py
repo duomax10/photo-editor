@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QSettings, Qt, QThread, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -28,7 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import core, undo_store
+from . import core, paths, undo_store
 from .core import ApplyResult, PhotoEntry, ShiftPlan
 
 APP_NAME = "Photo Timestamp Editor"
@@ -43,6 +44,18 @@ COLUMNS = [
     "New file modified",
     "Status",
 ]
+
+
+def resource_dir() -> Path:
+    """Where bundled resources live, both from source and inside a frozen build."""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "photo_timestamp_editor" / "resources"
+    return Path(__file__).resolve().parent / "resources"
+
+
+def app_icon() -> QIcon:
+    icon_path = resource_dir() / "app.ico"
+    return QIcon(str(icon_path)) if icon_path.exists() else QIcon()
 
 
 def format_dt(value: datetime | None) -> str:
@@ -92,7 +105,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.resize(1100, 680)
 
-        self.settings = QSettings("PhotoTimestampEditor", "PhotoTimestampEditor")
+        # A portable copy keeps its settings in a file beside the executable
+        # rather than in the registry, so it leaves nothing on the machine.
+        if paths.is_portable():
+            self.settings = QSettings(str(paths.settings_file()), QSettings.IniFormat)
+        else:
+            self.settings = QSettings("PhotoTimestampEditor", "PhotoTimestampEditor")
         self.folder: Path | None = None
         self.entries: list[PhotoEntry] = []
         self.plan: ShiftPlan | None = None
@@ -520,6 +538,7 @@ class MainWindow(QMainWindow):
 def main() -> int:
     app = QApplication.instance() or QApplication([])
     app.setApplicationName(APP_NAME)
+    app.setWindowIcon(app_icon())
     window = MainWindow()
     window.show()
     return app.exec()
