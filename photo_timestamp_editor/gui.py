@@ -29,7 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import core, paths, undo_store
+from . import core, log, paths, undo_store
+from . import __version__
 from .core import ApplyResult, PhotoEntry, ShiftPlan
 
 APP_NAME = "Photo Timestamp Editor"
@@ -116,6 +117,7 @@ class MainWindow(QMainWindow):
         self.plan: ShiftPlan | None = None
         self._thread: QThread | None = None
         self._worker: Worker | None = None
+        self._on_done = None
 
         self._build_ui()
         self._refresh_undo_button()
@@ -484,23 +486,33 @@ class MainWindow(QMainWindow):
             return  # a job is already running
         self._set_busy(True, busy_message)
 
+        self._on_done = on_done
         self._thread = QThread(self)
         self._worker = Worker(job)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
-        self._worker.progress.connect(self._on_progress)
-        self._worker.finished.connect(lambda outcome: self._finish(on_done, outcome))
-        self._worker.failed.connect(self._on_failed)
+
+        # These must be bound methods of this window, connected explicitly as
+        # queued, so they run on the GUI thread. A bare lambda has no receiver
+        # object, which makes Qt run it directly on the worker thread instead --
+        # and touching a widget from there aborts the process outright rather
+        # than raising something we could report.
+        self._worker.progress.connect(self._on_progress, Qt.QueuedConnection)
+        self._worker.finished.connect(self._on_finished, Qt.QueuedConnection)
+        self._worker.failed.connect(self._on_failed, Qt.QueuedConnection)
         self._thread.start()
 
-    def _finish(self, on_done, outcome) -> None:
+    def _on_finished(self, outcome) -> None:
+        on_done = self._on_done
         self._teardown_thread()
         self._set_busy(False, "")
-        on_done(outcome)
+        if on_done is not None:
+            on_done(outcome)
 
     def _on_failed(self, message: str) -> None:
         self._teardown_thread()
         self._set_busy(False, "")
+        log.write(f"background job failed: {message}")
         QMessageBox.critical(self, APP_NAME, message)
         self.statusBar().showMessage("Failed: " + message)
 
@@ -509,8 +521,11 @@ class MainWindow(QMainWindow):
             self._thread.quit()
             self._thread.wait()
             self._thread.deleteLater()
+        if self._worker is not None:
+            self._worker.deleteLater()
         self._thread = None
         self._worker = None
+        self._on_done = None
 
     def _on_progress(self, done: int, total: int, name: str) -> None:
         self.progress.setMaximum(max(total, 1))
@@ -536,9 +551,11 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
+    log.install_excepthook()
     app = QApplication.instance() or QApplication([])
     app.setApplicationName(APP_NAME)
     app.setWindowIcon(app_icon())
+    log.write(f"starting {APP_NAME} {__version__}")
     window = MainWindow()
     window.show()
     return app.exec()

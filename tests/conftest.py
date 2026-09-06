@@ -6,10 +6,14 @@ against known-good structures without needing sample photos in the repo.
 
 from __future__ import annotations
 
+import os
 import struct
 import zlib
 
 import pytest
+
+# Qt tests run headless; must be set before any QApplication is created.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 # Layout of the TIFF block produced by :func:`build_tiff_block`.
 IFD0_OFFSET = 8

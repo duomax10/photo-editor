@@ -77,14 +77,14 @@ The **Build Windows portable** workflow builds on a Windows runner.
   workflow**. The ZIP is attached to the run as an artifact; nothing is
   published.
 * **To publish a release, from the browser:** Releases → *Draft a new release*
-  → **Choose a tag** → type `v1.0.1` → *Create new tag on publish* →
+  → **Choose a tag** → type `v1.0.2` → *Create new tag on publish* →
   **Publish release**. The build starts and attaches the ZIP to that release a
   few minutes later. No local clone needed.
 * **To publish a release, from a clone:** push the tag and the workflow creates
   the release itself.
 
   ```
-  git tag v1.0.1 && git push origin v1.0.1
+  git tag v1.0.2 && git push origin v1.0.2
   ```
 
 Either way the tag must match `__version__` in
@@ -100,7 +100,7 @@ left alone.
 The download URL is then predictable:
 
 ```
-https://github.com/<owner>/<repo>/releases/download/v1.0.1/PhotoTimestampEditor-1.0.1-windows-x64.zip
+https://github.com/<owner>/<repo>/releases/download/v1.0.2/PhotoTimestampEditor-1.0.2-windows-x64.zip
 ```
 
 ### Building the ZIP locally
@@ -114,7 +114,7 @@ runs PyInstaller, checks the result actually starts, and leaves you with:
 
 ```
 dist\PhotoTimestampEditor\                        the folder to run
-dist\PhotoTimestampEditor-1.0.1-windows-x64.zip   the folder, zipped, to hand out
+dist\PhotoTimestampEditor-1.0.2-windows-x64.zip   the folder, zipped, to hand out
 ```
 
 Both paths call `tools/package_portable.py` for the final step, so the ZIP is
@@ -171,6 +171,10 @@ the app folder switches it to the latter.
   platforms the app still runs and shifts modified/accessed dates.
 * Subfolders are not scanned.
 
+If something goes wrong, the app writes to `data\logs\app.log` next to the
+program (or `%LOCALAPPDATA%\PhotoTimestampEditor\logs\app.log` when not
+portable). That is the first place to look when reporting a problem.
+
 ## Development
 
 ```
@@ -189,6 +193,7 @@ keeps PNG chunk CRCs valid, and reverses exactly.
 | `core.py` | Scans a folder, plans a shift, applies it, undoes it. |
 | `undo_store.py` | Saves undo records between sessions. |
 | `paths.py` | Decides where settings and undo logs go (portable or AppData). |
+| `log.py` | Writes errors to a file, since a windowed build has no console. |
 | `gui.py` | The PySide6 window. |
 
 `packaging/` holds the PyInstaller spec and the text file shipped inside the
