@@ -77,14 +77,14 @@ The **Build Windows portable** workflow builds on a Windows runner.
   workflow**. The ZIP is attached to the run as an artifact; nothing is
   published.
 * **To publish a release, from the browser:** Releases → *Draft a new release*
-  → **Choose a tag** → type `v1.0.0` → *Create new tag on publish* →
+  → **Choose a tag** → type `v1.0.1` → *Create new tag on publish* →
   **Publish release**. The build starts and attaches the ZIP to that release a
   few minutes later. No local clone needed.
 * **To publish a release, from a clone:** push the tag and the workflow creates
   the release itself.
 
   ```
-  git tag v1.0.0 && git push origin v1.0.0
+  git tag v1.0.1 && git push origin v1.0.1
   ```
 
 Either way the tag must match `__version__` in
@@ -100,7 +100,7 @@ left alone.
 The download URL is then predictable:
 
 ```
-https://github.com/<owner>/<repo>/releases/download/v1.0.0/PhotoTimestampEditor-1.0.0-windows-x64.zip
+https://github.com/<owner>/<repo>/releases/download/v1.0.1/PhotoTimestampEditor-1.0.1-windows-x64.zip
 ```
 
 ### Building the ZIP locally
@@ -114,7 +114,7 @@ runs PyInstaller, checks the result actually starts, and leaves you with:
 
 ```
 dist\PhotoTimestampEditor\                        the folder to run
-dist\PhotoTimestampEditor-1.0.0-windows-x64.zip   the folder, zipped, to hand out
+dist\PhotoTimestampEditor-1.0.1-windows-x64.zip   the folder, zipped, to hand out
 ```
 
 Both paths call `tools/package_portable.py` for the final step, so the ZIP is
