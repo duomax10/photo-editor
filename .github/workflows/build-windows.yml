@@ -35,6 +35,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +98,19 @@ jobs:
           # spec's aggressive module exclusions could have broken. The exe is
           # built windowed, so PowerShell does not wait for it by default.
           $exe = "dist\PhotoTimestampEditor\PhotoTimestampEditor.exe"
-          $process = Start-Process -FilePath $exe -ArgumentList "--selftest" -Wait -PassThru
+          $process = Start-Process -FilePath $exe -ArgumentList "--selftest" -PassThru
+
+          # Never wait unbounded. A windowed app that cannot load Qt's platform
+          # plugin shows a modal error box instead of exiting, which would hang
+          # the job until the runner timeout rather than failing usefully.
+          try {
+            $process | Wait-Process -Timeout 180 -ErrorAction Stop
+          } catch {
+            $process | Stop-Process -Force -ErrorAction SilentlyContinue
+            Write-Error "The packaged app did not exit within 180s. It is most likely stuck on an error dialog, which usually means Qt's platform plugin is missing from the bundle."
+            exit 1
+          }
+
           if ($process.ExitCode -ne 0) {
             Write-Error "The packaged app failed its self-test (exit code $($process.ExitCode)). Something the spec excludes is actually needed."
             exit 1
