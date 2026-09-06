@@ -1,0 +1,15 @@
+[project]
+name = "photo-timestamp-editor"
+version = "1.0.0"
+description = "Bulk-shift the timestamps on a folder of photos."
+requires-python = ">=3.10"
+dependencies = ["PySide6>=6.5"]
+
+[project.gui-scripts]
+photo-timestamp-editor = "photo_timestamp_editor.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["photo_timestamp_editor"]

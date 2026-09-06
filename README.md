@@ -1,0 +1,119 @@
+# Photo Timestamp Editor
+
+A small Windows desktop app for fixing the dates on a whole folder of photos at
+once — most often because the camera was set to the wrong time zone.
+
+Pick a folder, dial in a shift (`-7 h`, `+1 h`, whatever you need), check the
+preview table, and apply. Every change can be undone.
+
+![The main window](docs/screenshot.png)
+
+## What it does
+
+* **Shifts by hours** (plus minutes, seconds and days) — positive or negative.
+* **Updates the EXIF dates inside each photo**: `DateTimeOriginal`,
+  `DateTimeDigitized` and `DateTime`. These are what Windows Photos, Lightroom,
+  Google Photos and Apple Photos sort by.
+* **Updates the Windows file dates** — modified, accessed, and created.
+* **Previews everything first** so you can see the old and new values per file
+  before anything is written.
+* **Undoes the last change**, restoring the exact original bytes and file dates.
+
+## Your files are never rewritten
+
+EXIF date values are fixed-width ASCII (`YYYY:MM:DD HH:MM:SS`), so a shifted
+date is always exactly as long as the one it replaces. The app takes advantage
+of that: it seeks to the date characters and overwrites them where they sit.
+
+* No file is ever copied, moved, replaced, or deleted.
+* No image is re-encoded, so there is no quality loss — not even for JPEG.
+* File sizes never change, and no byte outside the date fields is touched.
+* Before writing, the app re-checks that each target still holds the bytes it
+  saw during the scan. If anything has changed, that file is skipped and
+  nothing is written to it.
+* If one file fails, the rest still go through, and the failed one is rolled
+  back rather than left half-changed.
+
+This is also why raw and HEIC files are fully supported rather than limited to
+file dates — there is no re-encoding step to worry about.
+
+## Supported formats
+
+| Format | EXIF dates | File dates |
+| --- | --- | --- |
+| JPEG (`.jpg`, `.jpeg`, `.jpe`) | yes | yes |
+| HEIC / HEIF (`.heic`, `.heif`, `.hif`) | yes | yes |
+| TIFF (`.tif`, `.tiff`) | yes | yes |
+| Raw (`.cr2`, `.nef`, `.arw`, `.dng`, `.orf`, `.rw2`, `.pef`, `.srw`, `.raf`) | yes | yes |
+| PNG (`.png`) | yes, if it has an `eXIf` chunk | yes |
+
+Files with no readable EXIF still get their file dates shifted; the preview
+table says so per file.
+
+## Running it
+
+Double-click **`run.bat`**. The first run creates a virtual environment and
+installs PySide6; later runs start straight away. You need
+[Python 3.10 or newer](https://www.python.org/downloads/windows/) installed
+with "Add python.exe to PATH" ticked.
+
+To run it by hand instead:
+
+```
+pip install -r requirements.txt
+python -m photo_timestamp_editor
+```
+
+### Building a standalone .exe
+
+Run **`build_exe.bat`**. It produces `dist\PhotoTimestampEditor.exe`, a single
+file that runs on machines with no Python installed.
+
+## How to use it
+
+1. **Choose a folder.** Photos sitting directly in it are listed; subfolders are
+   not included.
+2. **Set the shift.** For a time-zone mistake, use the hours box — if the camera
+   was five hours ahead, set `-5 h`. The `-1 h` / `+1 h` buttons are there for
+   daylight-saving fixes.
+3. **Check the preview.** The table shows each file's current and new dates, and
+   what will be written to it.
+4. **Apply.** You will be asked to confirm, then the shift is applied.
+5. **Undo** if it wasn't what you wanted. The button restores the most recent
+   change, exactly.
+
+Undo logs are kept in `%LOCALAPPDATA%\PhotoTimestampEditor\undo` — outside your
+photo folder, so nothing is ever added to the folder you are working on. The
+last 50 are retained.
+
+## Notes and limits
+
+* EXIF dates carry no time zone, so a shift moves the recorded local time. If a
+  file has the newer `OffsetTime` tags, they are left alone — worth knowing if
+  you rely on them.
+* Raw files sometimes keep a second copy of the capture time inside the
+  manufacturer's private maker note. That copy is left untouched, since editing
+  it safely is camera-specific. The standard EXIF tags that software reads are
+  updated.
+* The Windows **created** date can only be written on Windows. On other
+  platforms the app still runs and shifts modified/accessed dates.
+* Subfolders are not scanned.
+
+## Development
+
+```
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+The tests build small synthetic JPEG, PNG, HEIF, TIFF and raw files byte by byte
+and check that a shift lands on the right bytes, leaves every other byte alone,
+keeps PNG chunk CRCs valid, and reverses exactly.
+
+| Module | Role |
+| --- | --- |
+| `exif.py` | Finds and patches EXIF date tags. Standard library only. |
+| `filetimes.py` | Reads and writes file dates, including Windows creation time. |
+| `core.py` | Scans a folder, plans a shift, applies it, undoes it. |
+| `undo_store.py` | Saves undo records between sessions. |
+| `gui.py` | The PySide6 window. |
