@@ -94,10 +94,28 @@ jobs:
       - name: Verify the built app starts
         shell: pwsh
         run: |
-          # Loads the real Windows Qt platform plugin, which is exactly what the
-          # spec's aggressive module exclusions could have broken. The exe is
-          # built windowed, so PowerShell does not wait for it by default.
-          $exe = "dist\PhotoTimestampEditor\PhotoTimestampEditor.exe"
+          $app = "dist\PhotoTimestampEditor"
+          $exe = "$app\PhotoTimestampEditor.exe"
+
+          # The spec's module exclusions could strip Qt's platform plugins, and
+          # the app cannot start without one. Check for them directly rather
+          # than inferring it from how the app behaves.
+          foreach ($plugin in @("qwindows.dll", "qoffscreen.dll")) {
+            $found = Get-ChildItem -Path $app -Recurse -Filter $plugin -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            if (-not $found) {
+              Write-Error "$plugin is missing from the bundle. packaging/PhotoTimestampEditor.spec excluded too much -- the app cannot start without a Qt platform plugin."
+              exit 1
+            }
+            Write-Host "Found $plugin"
+          }
+
+          # Run offscreen: a CI runner has no dependable interactive desktop,
+          # and the check above already proves the real Windows plugin shipped.
+          $env:QT_QPA_PLATFORM = "offscreen"
+          # Make Qt's own fatal errors go to stderr instead of a modal box.
+          $env:QT_ASSUME_STDERR_HAS_CONSOLE = "1"
+
           $process = Start-Process -FilePath $exe -ArgumentList "--selftest" -PassThru
 
           # Never wait unbounded. A windowed app that cannot load Qt's platform
@@ -111,8 +129,17 @@ jobs:
             exit 1
           }
 
+          # A windowed build has no console, so sys.stderr is None inside it and
+          # the exit code is the only channel that survives.
+          $reasons = @{
+            2 = "the application icon is missing from the bundle"
+            3 = "the preview window did not build correctly"
+            4 = "the app raised an exception on startup"
+          }
           if ($process.ExitCode -ne 0) {
-            Write-Error "The packaged app failed its self-test (exit code $($process.ExitCode)). Something the spec excludes is actually needed."
+            $why = $reasons[$process.ExitCode]
+            if (-not $why) { $why = "unrecognised failure" }
+            Write-Error "The packaged app failed its self-test (exit code $($process.ExitCode)): $why."
             exit 1
           }
           Write-Host "Packaged app started cleanly."

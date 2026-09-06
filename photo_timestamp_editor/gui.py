@@ -544,26 +544,57 @@ def main() -> int:
     return app.exec()
 
 
+def _report(message: str) -> None:
+    """Print a diagnostic without assuming there is anywhere to print to.
+
+    A windowed PyInstaller build has no console, and sets ``sys.stderr`` and
+    ``sys.stdout`` to ``None``. Writing to them there raises, so the exit code
+    is the real channel and this is best-effort.
+    """
+    stream = sys.stderr or sys.stdout
+    if stream is None:
+        return
+    try:
+        stream.write(message + "\n")
+        stream.flush()
+    except Exception:  # noqa: BLE001 - diagnostics must never be the failure
+        pass
+
+
+# Exit codes, so a windowed build can report a cause with no console.
+SELFTEST_OK = 0
+SELFTEST_NO_ICON = 2
+SELFTEST_BAD_TABLE = 3
+SELFTEST_CRASHED = 4
+
+
 def selftest() -> int:
     """Build the window without showing it, then exit.
 
     Creating the QApplication is the part that loads Qt's platform plugin, so
     this catches a packaged build whose Qt libraries were trimmed too hard.
-    Nothing is shown and no event loop runs, which keeps it usable on a CI
-    machine with no interactive desktop.
+    Nothing is shown and no event loop runs.
+
+    Every failure has to come back as an exit code. An exception escaping a
+    windowed build is shown in a modal dialog, which would hang whatever is
+    waiting on the process rather than failing it.
     """
-    app = QApplication.instance() or QApplication([])
-    app.setApplicationName(APP_NAME)
+    try:
+        app = QApplication.instance() or QApplication([])
+        app.setApplicationName(APP_NAME)
 
-    icon = app_icon()
-    if icon.isNull():
-        sys.stderr.write("selftest: the application icon is missing from the bundle\n")
-        return 1
+        icon = app_icon()
+        if icon.isNull():
+            _report("selftest: the application icon is missing from the bundle")
+            return SELFTEST_NO_ICON
 
-    window = MainWindow()
-    if window.table.columnCount() != len(COLUMNS):
-        sys.stderr.write("selftest: the preview table did not build correctly\n")
-        return 1
+        window = MainWindow()
+        if window.table.columnCount() != len(COLUMNS):
+            _report("selftest: the preview table did not build correctly")
+            return SELFTEST_BAD_TABLE
 
-    sys.stderr.write(f"selftest: ok ({APP_NAME}, {len(icon.availableSizes())} icon sizes)\n")
-    return 0
+        _report(f"selftest: ok ({APP_NAME}, {len(icon.availableSizes())} icon sizes)")
+        return SELFTEST_OK
+    except BaseException as error:  # noqa: BLE001 - must not reach the bootloader
+        _report(f"selftest: failed: {error!r}")
+        return SELFTEST_CRASHED
