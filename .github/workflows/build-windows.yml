@@ -25,6 +25,13 @@ on:
 permissions:
   contents: write # required to create or update the release
 
+# Publishing a release from the web UI creates the tag too, so GitHub fires
+# both the release event and a tag push, starting two identical builds that
+# race to attach the same asset. Keep one run per tag.
+concurrency:
+  group: build-windows-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest
