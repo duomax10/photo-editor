@@ -156,3 +156,66 @@ def raw_file(tmp_path, tiff_block):
     path = tmp_path / "DSC_0003.nef"
     path.write_bytes(tiff_block)
     return path
+
+
+def build_tiff_variant(magic: int) -> bytes:
+    """A TIFF block stamped with a raw format's own magic number.
+
+    Olympus and Panasonic reuse TIFF's IFD layout but put their own marker
+    where baseline TIFF has 42.
+    """
+    block = bytearray(build_tiff_block())
+    struct.pack_into("<H", block, 2, magic)
+    return bytes(block)
+
+
+def build_raf(tiff: bytes) -> bytes:
+    """Fuji raw: a header whose offset table points at a complete JPEG."""
+    jpeg = build_jpeg(tiff)
+    header = bytearray(b"\x00" * 148)
+    header[0:15] = b"FUJIFILMCCD-RAW"
+    header[15:20] = b"0201\x00"
+    struct.pack_into(">I", header, 84, len(header))  # JPEG offset
+    struct.pack_into(">I", header, 88, len(jpeg))  # JPEG length
+    return bytes(header) + jpeg
+
+
+def build_cr3(tiff: bytes) -> bytes:
+    """Canon CR3: EXIF in CMT1/CMT2 boxes inside Canon's uuid box under moov."""
+
+    def box(kind: bytes, payload: bytes) -> bytes:
+        return struct.pack(">I", len(payload) + 8) + kind + payload
+
+    ftyp = box(b"ftyp", b"crx " + struct.pack(">I", 0))
+    # CMT1 is IFD0 and CMT2 the Exif IFD; each is a standalone TIFF block.
+    canon_uuid = bytes.fromhex("85c0b687820f11e08111f4ce462b6a48")
+    uuid_box = box(b"uuid", canon_uuid + box(b"CMT1", tiff) + box(b"CMT2", tiff))
+    return ftyp + box(b"moov", uuid_box)
+
+
+@pytest.fixture
+def orf_file(tmp_path):
+    path = tmp_path / "P1010001.orf"
+    path.write_bytes(build_tiff_variant(0x4F52))
+    return path
+
+
+@pytest.fixture
+def rw2_file(tmp_path):
+    path = tmp_path / "P1010002.rw2"
+    path.write_bytes(build_tiff_variant(85))
+    return path
+
+
+@pytest.fixture
+def raf_file(tmp_path, tiff_block):
+    path = tmp_path / "DSCF0001.raf"
+    path.write_bytes(build_raf(tiff_block))
+    return path
+
+
+@pytest.fixture
+def cr3_file(tmp_path, tiff_block):
+    path = tmp_path / "IMG_5001.cr3"
+    path.write_bytes(build_cr3(tiff_block))
+    return path

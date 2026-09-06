@@ -182,3 +182,57 @@ def test_undo_records_round_trip_through_disk(folder, tmp_path, monkeypatch):
 
     assert core.undo(reloaded).failed == 0
     assert exif.read_exif_dates(folder / "a.jpg").primary.value == datetime(2023, 7, 14, 9, 30)
+
+
+def test_survey_reports_files_it_ignored(folder):
+    (folder / "clip.mov").write_bytes(b"movie")
+    (folder / "readme").write_text("no extension")
+
+    survey = core.survey_folder(folder)
+
+    assert survey.ignored_count == 3  # notes.txt, clip.mov, readme
+    assert ".mov" in survey.ignored_extensions
+    assert ".txt" in survey.ignored_extensions
+    assert "(no extension)" in survey.ignored_extensions
+
+
+def test_survey_counts_photos_hidden_in_subfolders(folder):
+    # A common layout: raw files kept in their own subfolder next to the JPEGs.
+    raw_dir = folder / "RAW"
+    raw_dir.mkdir()
+    (raw_dir / "DSC_1.nef").write_bytes(build_tiff_block())
+    (raw_dir / "DSC_2.orf").write_bytes(build_tiff_block())
+
+    survey = core.survey_folder(folder)
+
+    # subfolder/deep.jpg from the fixture, plus the two raw files.
+    assert survey.photos_in_subfolders == 3
+    assert [e.name for e in core.scan_folder(folder)] == [
+        "a.jpg",
+        "b.heic",
+        "broken.jpg",
+        "c.png",
+        "d.nef",
+    ], "subfolder photos must still not be scanned"
+
+
+def test_raw_formats_with_their_own_magic_numbers_are_shifted(tmp_path):
+    from tests.conftest import build_cr3, build_raf, build_tiff_variant
+
+    (tmp_path / "olympus.orf").write_bytes(build_tiff_variant(0x4F52))
+    (tmp_path / "panasonic.rw2").write_bytes(build_tiff_variant(85))
+    (tmp_path / "fuji.raf").write_bytes(build_raf(build_tiff_block()))
+    (tmp_path / "canon.cr3").write_bytes(build_cr3(build_tiff_block()))
+
+    entries = core.scan_folder(tmp_path)
+    assert len(entries) == 4
+    assert all(e.exif_datetime == datetime(2023, 7, 14, 9, 30) for e in entries), {
+        e.name: e.exif_error for e in entries
+    }
+
+    result = core.apply_plan(core.build_plan(entries, timedelta(hours=-7)))
+    assert result.failed == 0
+    for name in ("olympus.orf", "panasonic.rw2", "fuji.raf", "canon.cr3"):
+        assert exif.read_exif_dates(tmp_path / name).primary.value == datetime(
+            2023, 7, 14, 2, 30
+        ), name

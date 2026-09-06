@@ -303,21 +303,34 @@ class MainWindow(QMainWindow):
         if not self.folder:
             return
         folder = self.folder
-        self._run(
-            lambda report: core.scan_folder(folder, report),
-            on_done=self._scan_finished,
-            busy_message=f"Reading {folder}…",
-        )
 
-    def _scan_finished(self, entries: list[PhotoEntry]) -> None:
+        def job(report):
+            # Survey inside the worker too, so the folder walk stays off the GUI.
+            return core.scan_folder(folder, report), core.survey_folder(folder)
+
+        self._run(job, on_done=self._scan_finished, busy_message=f"Reading {folder}…")
+
+    def _scan_finished(self, outcome) -> None:
+        entries, survey = outcome
         self.entries = entries
+
         if not entries:
-            self.statusBar().showMessage("No supported photos found in that folder.")
+            parts = ["No supported photos found directly in that folder."]
         else:
             with_dates = sum(1 for e in entries if e.exif_datetime)
-            self.statusBar().showMessage(
-                f"Found {len(entries)} photo(s); {with_dates} have a readable EXIF date."
+            parts = [f"Found {len(entries)} photo(s); {with_dates} have a readable EXIF date."]
+
+        # Anything left out is said out loud: silently skipping files looks
+        # exactly like failing on them.
+        if survey.ignored_count:
+            kinds = ", ".join(survey.ignored_extensions[:6])
+            parts.append(f"{survey.ignored_count} file(s) ignored ({kinds}).")
+        if survey.photos_in_subfolders:
+            parts.append(
+                f"{survey.photos_in_subfolders} photo(s) in subfolders were NOT scanned."
             )
+
+        self.statusBar().showMessage("  ".join(parts))
         self._update_preview()
 
     def apply(self) -> None:

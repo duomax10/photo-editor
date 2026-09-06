@@ -112,6 +112,36 @@ def iter_photo_paths(folder: Path) -> list[Path]:
     return sorted(paths, key=lambda p: p.name.lower())
 
 
+@dataclass
+class FolderSurvey:
+    """What the folder holds that the scan deliberately left out.
+
+    Without this the app silently ignores anything it does not recognise, which
+    looks identical to it having failed on those files.
+    """
+
+    ignored_extensions: list[str] = field(default_factory=list)
+    ignored_count: int = 0
+    photos_in_subfolders: int = 0
+
+
+def survey_folder(folder: Path) -> FolderSurvey:
+    survey = FolderSurvey()
+    extensions: set[str] = set()
+    for item in folder.iterdir():
+        if item.is_file():
+            suffix = item.suffix.lower()
+            if suffix not in exif.SUPPORTED_EXTENSIONS:
+                survey.ignored_count += 1
+                extensions.add(suffix or "(no extension)")
+        elif item.is_dir():
+            for nested in item.rglob("*"):
+                if nested.is_file() and nested.suffix.lower() in exif.SUPPORTED_EXTENSIONS:
+                    survey.photos_in_subfolders += 1
+    survey.ignored_extensions = sorted(extensions)
+    return survey
+
+
 def scan_folder(folder: Path, progress: ProgressCallback | None = None) -> list[PhotoEntry]:
     paths = iter_photo_paths(folder)
     entries: list[PhotoEntry] = []

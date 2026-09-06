@@ -44,11 +44,20 @@ file dates — there is no re-encoding step to worry about.
 | JPEG (`.jpg`, `.jpeg`, `.jpe`) | yes | yes |
 | HEIC / HEIF (`.heic`, `.heif`, `.hif`) | yes | yes |
 | TIFF (`.tif`, `.tiff`) | yes | yes |
-| Raw (`.cr2`, `.nef`, `.arw`, `.dng`, `.orf`, `.rw2`, `.pef`, `.srw`, `.raf`) | yes | yes |
 | PNG (`.png`) | yes, if it has an `eXIf` chunk | yes |
+| Raw, TIFF-based — Canon `.cr2`, Nikon `.nef` `.nrw`, Sony `.arw` `.sr2` `.srf`, Adobe/Leica `.dng` `.rwl`, Olympus `.orf`, Panasonic `.rw2`, Pentax `.pef`, Samsung `.srw`, Epson `.erf`, Hasselblad `.3fr`, Phase One `.iiq`, Mamiya `.mef`, Leaf `.mos`, Kodak `.dcr` `.kdc` | yes | yes |
+| Raw, own container — Fuji `.raf`, Canon `.cr3` | yes | yes |
+| Raw, recognised but not parsed — Minolta `.mrw`, Sigma `.x3f` | no | yes |
+
+Olympus and Panasonic stamp their own marker where baseline TIFF writes 42;
+Fuji wraps a whole JPEG in its own container; Canon's current `.cr3` is
+ISOBMFF with the EXIF in private `CMT1`/`CMT2` boxes. Each is handled
+specifically rather than assumed to be plain TIFF.
 
 Files with no readable EXIF still get their file dates shifted; the preview
-table says so per file.
+table says so per file. Anything the app does not recognise is reported in the
+status bar with a count, as are photos sitting in subfolders — which are never
+scanned.
 
 ## Getting it onto a Windows PC
 
@@ -77,14 +86,14 @@ The **Build Windows portable** workflow builds on a Windows runner.
   workflow**. The ZIP is attached to the run as an artifact; nothing is
   published.
 * **To publish a release, from the browser:** Releases → *Draft a new release*
-  → **Choose a tag** → type `v1.0.2` → *Create new tag on publish* →
+  → **Choose a tag** → type `v1.0.3` → *Create new tag on publish* →
   **Publish release**. The build starts and attaches the ZIP to that release a
   few minutes later. No local clone needed.
 * **To publish a release, from a clone:** push the tag and the workflow creates
   the release itself.
 
   ```
-  git tag v1.0.2 && git push origin v1.0.2
+  git tag v1.0.3 && git push origin v1.0.3
   ```
 
 Either way the tag must match `__version__` in
@@ -100,7 +109,7 @@ left alone.
 The download URL is then predictable:
 
 ```
-https://github.com/<owner>/<repo>/releases/download/v1.0.2/PhotoTimestampEditor-1.0.2-windows-x64.zip
+https://github.com/<owner>/<repo>/releases/download/v1.0.3/PhotoTimestampEditor-1.0.3-windows-x64.zip
 ```
 
 ### Building the ZIP locally
@@ -114,7 +123,7 @@ runs PyInstaller, checks the result actually starts, and leaves you with:
 
 ```
 dist\PhotoTimestampEditor\                        the folder to run
-dist\PhotoTimestampEditor-1.0.2-windows-x64.zip   the folder, zipped, to hand out
+dist\PhotoTimestampEditor-1.0.3-windows-x64.zip   the folder, zipped, to hand out
 ```
 
 Both paths call `tools/package_portable.py` for the final step, so the ZIP is

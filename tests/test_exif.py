@@ -13,13 +13,27 @@ from photo_timestamp_editor.exif import ExifError
 
 from tests.conftest import build_jpeg, build_tiff_block
 
-CONTAINERS = ["jpeg_file", "png_file", "heif_file", "tiff_file", "raw_file"]
+CONTAINERS = [
+    "jpeg_file",
+    "png_file",
+    "heif_file",
+    "tiff_file",
+    "raw_file",
+    "orf_file",
+    "rw2_file",
+    "raf_file",
+    "cr3_file",
+]
 EXPECTED_CONTAINER = {
     "jpeg_file": "JPEG",
     "png_file": "PNG",
     "heif_file": "HEIF",
     "tiff_file": "TIFF",
     "raw_file": "RAW",
+    "orf_file": "RAW",
+    "rw2_file": "RAW",
+    "raf_file": "RAF",
+    "cr3_file": "CR3",
 }
 
 
@@ -29,11 +43,12 @@ def test_reads_all_three_dates(request, fixture_name):
     info = exif.read_exif_dates(path)
 
     assert info.container == EXPECTED_CONTAINER[fixture_name]
-    assert [f.name for f in info.fields] == [
+    # CR3 carries two independent EXIF blocks, so names can repeat.
+    assert {f.name for f in info.fields} == {
         "DateTime",
         "DateTimeOriginal",
         "DateTimeDigitized",
-    ]
+    }
     assert all(f.value == datetime(2023, 7, 14, 9, 30, 0) for f in info.fields)
     assert info.primary.name == "DateTimeOriginal"
 
@@ -45,7 +60,7 @@ def test_shift_rewrites_in_place_without_changing_size(request, fixture_name):
 
     info = exif.read_exif_dates(path)
     patches = exif.build_shift_patches(info, timedelta(hours=5))
-    assert len(patches) == 3
+    assert len(patches) == len([f for f in info.fields if f.value])
     exif.apply_patches(path, patches, info.png_chunk)
 
     after = path.read_bytes()

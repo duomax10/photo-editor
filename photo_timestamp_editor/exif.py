@@ -40,9 +40,54 @@ PRIMARY_TAG_ORDER = (TAG_DATETIME_ORIGINAL, TAG_DATETIME_DIGITIZED, TAG_DATETIME
 EXIF_DATETIME_FORMAT = "%Y:%m:%d %H:%M:%S"
 _TYPE_ASCII = 2
 
+# Baseline TIFF puts 42 in bytes 2-3. Several raw formats reuse the TIFF
+# container and its IFD layout exactly, but stamp their own marker there, so a
+# strict check for 42 rejects perfectly readable files.
+TIFF_MAGIC = {
+    42: "TIFF",
+    85: "RW2",  # Panasonic
+    0x4F52: "ORF",  # Olympus, "IIRO"
+    0x5352: "ORF",  # Olympus, "IIRS"
+}
+
+# Fuji wraps a whole JPEG (EXIF and all) inside its own container.
+RAF_SIGNATURE = b"FUJIFILMCCD-RAW"
+RAF_JPEG_OFFSET_AT = 84
+
+# Canon CR3 is ISOBMFF, with EXIF in Canon's private uuid box under moov.
+CR3_UUID = bytes.fromhex("85c0b687820f11e08111f4ce462b6a48")
+CR3_EXIF_BOXES = (b"CMT1", b"CMT2")  # IFD0 and the Exif IFD, each its own TIFF
+
 JPEG_EXTENSIONS = {".jpg", ".jpeg", ".jpe"}
 TIFF_EXTENSIONS = {".tif", ".tiff"}
-RAW_EXTENSIONS = {".cr2", ".nef", ".arw", ".dng", ".orf", ".rw2", ".pef", ".srw", ".raf"}
+RAW_EXTENSIONS = {
+    # TIFF-based, read and written directly.
+    ".cr2",  # Canon, older
+    ".nef",  # Nikon
+    ".nrw",  # Nikon, compact
+    ".arw",  # Sony
+    ".sr2",  # Sony, older
+    ".srf",  # Sony, older
+    ".dng",  # Adobe / Leica / Pentax
+    ".rwl",  # Leica
+    ".orf",  # Olympus
+    ".rw2",  # Panasonic
+    ".pef",  # Pentax
+    ".srw",  # Samsung
+    ".erf",  # Epson
+    ".3fr",  # Hasselblad
+    ".iiq",  # Phase One
+    ".mef",  # Mamiya
+    ".mos",  # Leaf
+    ".dcr",  # Kodak
+    ".kdc",  # Kodak
+    # Their own containers, handled separately.
+    ".raf",  # Fuji: wraps a JPEG
+    ".cr3",  # Canon, current: ISOBMFF
+    # Recognised so the file dates still shift, though the EXIF may not parse.
+    ".mrw",  # Minolta
+    ".x3f",  # Sigma
+}
 HEIF_EXTENSIONS = {".heic", ".heif", ".hif"}
 PNG_EXTENSIONS = {".png"}
 
@@ -149,8 +194,13 @@ def format_exif_datetime(value: datetime, byte_count: int) -> bytes:
 # --------------------------------------------------------------------------
 
 
-def _find_tiff_in_jpeg(data: bytes) -> int:
-    pos = 2  # skip SOI
+def _find_tiff_in_jpeg(data: bytes, start: int = 0) -> int:
+    """Locate the EXIF TIFF header in a JPEG beginning at ``start``.
+
+    ``start`` is non-zero when the JPEG is embedded in another container, as
+    Fuji's raw format does.
+    """
+    pos = start + 2  # skip SOI
     end = len(data)
     while pos + 4 <= end:
         if data[pos] != 0xFF:
@@ -322,17 +372,58 @@ def _find_tiff_in_heif(data: bytes) -> int:
     return payload_offset + 4 + header_offset
 
 
-def _locate_tiff(data: bytes, suffix: str) -> tuple[str, int, tuple[int, int] | None]:
+def _find_tiff_in_raf(data: bytes) -> int:
+    """Fuji raw: a container wrapping a full JPEG, which carries the EXIF."""
+    if len(data) < RAF_JPEG_OFFSET_AT + 8:
+        raise ExifError("this Fuji raw file is truncated")
+    (jpeg_offset,) = struct.unpack_from(">I", data, RAF_JPEG_OFFSET_AT)
+    if jpeg_offset <= 0 or jpeg_offset + 2 > len(data):
+        raise ExifError("this Fuji raw file has no embedded JPEG")
+    if data[jpeg_offset : jpeg_offset + 2] != b"\xff\xd8":
+        raise ExifError("the embedded JPEG in this Fuji raw file is not where it says")
+    return _find_tiff_in_jpeg(data, jpeg_offset)
+
+
+def _find_tiff_in_cr3(data: bytes) -> list[int]:
+    """Canon CR3: EXIF sits in CMT1/CMT2 boxes in Canon's uuid box under moov.
+
+    Each box holds a complete, self-contained TIFF block rather than one block
+    with an Exif IFD pointer, so this returns an offset per box.
+    """
+    moov = _find_box(data, 0, len(data), (b"moov",))
+    if not moov:
+        raise ExifError("no moov box in this CR3 file")
+
+    for box_type, payload_start, payload_end in _iter_boxes(data, *moov):
+        if box_type != b"uuid" or data[payload_start : payload_start + 16] != CR3_UUID:
+            continue
+        offsets = [
+            start
+            for kind, start, _ in _iter_boxes(data, payload_start + 16, payload_end)
+            if kind in CR3_EXIF_BOXES
+        ]
+        if offsets:
+            return offsets
+    raise ExifError("no EXIF boxes in this CR3 file")
+
+
+def _locate_tiff(data: bytes, suffix: str) -> tuple[str, list[int], tuple[int, int] | None]:
+    """Return the container name, every TIFF block offset in it, and any PNG chunk."""
     if data[:2] == b"\xff\xd8":
-        return "JPEG", _find_tiff_in_jpeg(data), None
+        return "JPEG", [_find_tiff_in_jpeg(data)], None
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         tiff_offset, chunk = _find_tiff_in_png(data)
-        return "PNG", tiff_offset, chunk
+        return "PNG", [tiff_offset], chunk
     if data[:2] in (b"II", b"MM"):
         container = "RAW" if suffix in RAW_EXTENSIONS else "TIFF"
-        return container, 0, None
+        return container, [0], None
+    if data[: len(RAF_SIGNATURE)] == RAF_SIGNATURE:
+        return "RAF", [_find_tiff_in_raf(data)], None
     if data[4:8] == b"ftyp":
-        return "HEIF", _find_tiff_in_heif(data), None
+        # CR3 is ISOBMFF like HEIF, but stores EXIF Canon's own way.
+        if suffix == ".cr3" or data[8:12] == b"crx ":
+            return "CR3", _find_tiff_in_cr3(data), None
+        return "HEIF", [_find_tiff_in_heif(data)], None
     raise ExifError("unrecognised file format")
 
 
@@ -403,8 +494,10 @@ def _read_dates(data: bytes, tiff_offset: int) -> list[ExifDateField]:
         raise ExifError("EXIF block has no valid byte-order mark")
 
     (magic,) = struct.unpack_from(endian + "H", data, tiff_offset + 2)
-    if magic != 42:
-        raise ExifError("EXIF block has a bad TIFF magic number")
+    if magic not in TIFF_MAGIC:
+        raise ExifError(
+            f"EXIF block has an unrecognised TIFF magic number ({magic:#06x})"
+        )
     (ifd0_offset,) = struct.unpack_from(endian + "I", data, tiff_offset + 4)
 
     fields: list[ExifDateField] = []
@@ -421,14 +514,32 @@ def read_exif_dates(path: Path) -> ExifDateInfo:
     Raises :class:`ExifError` when the file has no usable EXIF block.
     """
     data = path.read_bytes()
-    container, tiff_offset, png_chunk = _locate_tiff(data, path.suffix.lower())
-    fields = _read_dates(data, tiff_offset)
+    container, tiff_offsets, png_chunk = _locate_tiff(data, path.suffix.lower())
+
+    fields: list[ExifDateField] = []
+    seen_offsets: set[int] = set()
+    errors: list[str] = []
+    for tiff_offset in tiff_offsets:
+        try:
+            found = _read_dates(data, tiff_offset)
+        except ExifError as error:
+            # One unreadable block should not hide the dates in another.
+            errors.append(str(error))
+            continue
+        for field_ in found:
+            if field_.file_offset not in seen_offsets:
+                seen_offsets.add(field_.file_offset)
+                fields.append(field_)
+
+    if not fields and errors:
+        raise ExifError(errors[0])
+
     note = ""
-    if container == "RAW":
+    if container in ("RAW", "CR3", "RAF"):
         note = "Raw files may also store a copy of the time in the maker note, which is left as-is."
     return ExifDateInfo(
         container=container,
-        tiff_offset=tiff_offset,
+        tiff_offset=tiff_offsets[0] if tiff_offsets else 0,
         fields=fields,
         png_chunk=png_chunk,
         note=note,
