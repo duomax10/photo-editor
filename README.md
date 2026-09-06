@@ -76,17 +76,26 @@ The **Build Windows portable** workflow builds on a Windows runner.
 * **To test a build:** Actions tab → *Build Windows portable* → **Run
   workflow**. The ZIP is attached to the run as an artifact; nothing is
   published.
-* **To publish a release:** push a tag. The same build then creates a GitHub
-  Release with the ZIP attached, which is the link you can send people.
+* **To publish a release, from the browser:** Releases → *Draft a new release*
+  → **Choose a tag** → type `v1.0.0` → *Create new tag on publish* →
+  **Publish release**. The build starts and attaches the ZIP to that release a
+  few minutes later. No local clone needed.
+* **To publish a release, from a clone:** push the tag and the workflow creates
+  the release itself.
 
   ```
   git tag v1.0.0 && git push origin v1.0.0
   ```
 
-  The tag must match `__version__` in `photo_timestamp_editor/__init__.py` —
-  the ZIP is named from the version, so a mismatch would produce a download
-  URL that disagrees with the tag. The workflow checks this and stops early
-  rather than publishing something inconsistent.
+Either way the tag must match `__version__` in
+`photo_timestamp_editor/__init__.py` — the ZIP is named from the version, so a
+mismatch would produce a download URL that disagrees with the tag. The workflow
+checks this and stops before publishing rather than shipping something
+inconsistent.
+
+Release notes come from `packaging/release-notes.md`, but only when the
+workflow creates the release itself; notes written by hand in the web UI are
+left alone.
 
 The download URL is then predictable:
 

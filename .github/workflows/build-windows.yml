@@ -1,23 +1,29 @@
 name: Build Windows portable
 
-# Two ways to run this:
+# Three ways to run this:
 #
 #   * Actions tab -> "Build Windows portable" -> Run workflow.
 #     Builds the ZIP and attaches it to the run as a downloadable artifact.
-#     Use this to check the build works without publishing anything.
+#     Nothing is published. Use this to check the build works.
 #
-#   * Push a tag like v1.0.0.
-#     Does the same, then publishes a GitHub Release with the ZIP attached,
-#     which is what gives the download URL you can email people.
+#   * Releases -> "Draft a new release" -> create a tag like v1.0.0 -> Publish.
+#     The build runs and attaches the ZIP to that release. No local git needed.
+#
+#   * Push a tag like v1.0.0 from a clone.
+#     The build runs and creates the release itself.
+#
+# The last two both give the download URL you can send people.
 
 on:
   workflow_dispatch:
   push:
     tags:
       - "v*"
+  release:
+    types: [published]
 
 permissions:
-  contents: write # required to create the release
+  contents: write # required to create or update the release
 
 jobs:
   build:
@@ -39,17 +45,40 @@ jobs:
       - name: Run the tests
         run: python -m pytest -q
 
+      - name: Work out whether this run publishes anything
+        id: target
+        shell: pwsh
+        run: |
+          # A release event carries its own tag; a tag push has it in the ref.
+          # A manual run publishes nothing and just leaves an artifact behind.
+          if ($env:GITHUB_EVENT_NAME -eq 'release') {
+            $tag = '${{ github.event.release.tag_name }}'
+          } elseif ($env:GITHUB_REF -like 'refs/tags/*') {
+            $tag = $env:GITHUB_REF_NAME
+          } else {
+            $tag = ''
+          }
+          if ($tag) { $publish = 'true' } else { $publish = 'false' }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "publish=$publish" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          if ($tag) {
+            Write-Host "Publishing to release $tag"
+          } else {
+            Write-Host "Manual run: building an artifact only, publishing nothing."
+          }
+
       - name: Check the tag matches the app version
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.target.outputs.publish == 'true'
         shell: pwsh
         run: |
           $version = python -c "import photo_timestamp_editor as p; print(p.__version__)"
           $expected = "v$version"
-          if ($env:GITHUB_REF_NAME -ne $expected) {
-            Write-Error "Tag $env:GITHUB_REF_NAME does not match __version__ ($expected). The ZIP is named from __version__, so publishing would produce a download URL that does not match the tag. Bump photo_timestamp_editor/__init__.py or retag."
+          $tag = "${{ steps.target.outputs.tag }}"
+          if ($tag -ne $expected) {
+            Write-Error "Tag $tag does not match __version__ ($expected). The ZIP is named from __version__, so publishing would produce a download URL that disagrees with the tag. Bump photo_timestamp_editor/__init__.py, or use the tag $expected."
             exit 1
           }
-          Write-Host "Tag $env:GITHUB_REF_NAME matches version $version"
+          Write-Host "Tag $tag matches version $version"
 
       - name: Build with PyInstaller
         run: pyinstaller packaging/PhotoTimestampEditor.spec --noconfirm --clean
@@ -57,13 +86,13 @@ jobs:
       - name: Verify the built app starts
         shell: pwsh
         run: |
-          # Runs the real Windows Qt platform plugin, which is exactly what the
+          # Loads the real Windows Qt platform plugin, which is exactly what the
           # spec's aggressive module exclusions could have broken. The exe is
           # built windowed, so PowerShell does not wait for it by default.
           $exe = "dist\PhotoTimestampEditor\PhotoTimestampEditor.exe"
           $process = Start-Process -FilePath $exe -ArgumentList "--selftest" -Wait -PassThru
           if ($process.ExitCode -ne 0) {
-            Write-Error "The packaged app failed its self-test (exit code $($process.ExitCode)). Something the spec excluded is actually needed."
+            Write-Error "The packaged app failed its self-test (exit code $($process.ExitCode)). Something the spec excludes is actually needed."
             exit 1
           }
           Write-Host "Packaged app started cleanly."
@@ -79,13 +108,37 @@ jobs:
           path: ${{ steps.package.outputs.zip_path }}
           if-no-files-found: error
 
-      - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Attach the ZIP to the release
+        if: steps.target.outputs.publish == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create $env:GITHUB_REF_NAME `
-            "${{ steps.package.outputs.zip_path }}" `
-            --title "Photo Timestamp Editor ${{ steps.package.outputs.version }}" `
-            --notes-file packaging/release-notes.md
+          # Probing for an existing release means running a command we expect to
+          # fail. On PowerShell 7.4+ a failing native command throws under the
+          # Stop preference Actions sets, so turn that off for the probe.
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          $tag = "${{ steps.target.outputs.tag }}"
+          $zip = "${{ steps.package.outputs.zip_path }}"
+
+          # The release already exists when a human created it in the web UI,
+          # and does not when a tag was pushed. Handle both.
+          gh release view $tag > $null 2>&1
+          $exists = ($LASTEXITCODE -eq 0)
+
+          if ($exists) {
+            Write-Host "Release $tag exists; attaching the ZIP to it."
+            gh release upload $tag $zip --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
+          } else {
+            Write-Host "Creating release $tag."
+            gh release create $tag $zip `
+              --title "Photo Timestamp Editor ${{ steps.package.outputs.version }}" `
+              --notes-file packaging/release-notes.md
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
+          }
+
+          Write-Host "Download URL:"
+          Write-Host "https://github.com/${{ github.repository }}/releases/download/$tag/${{ steps.package.outputs.zip_name }}"
