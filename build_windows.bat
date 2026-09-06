@@ -1,7 +1,10 @@
 @echo off
 REM Build the portable Windows folder + ZIP into dist\.
 REM Requires Python 3.10+ on this machine; the people you hand the ZIP to do not need it.
-setlocal enabledelayedexpansion
+REM
+REM If you have no Windows machine, use GitHub Actions instead:
+REM   Actions tab -> "Build Windows portable" -> Run workflow.
+setlocal
 cd /d "%~dp0"
 
 call :find_python || goto :no_python
@@ -18,22 +21,15 @@ echo Building...
 rmdir /s /q dist\PhotoTimestampEditor 2>nul
 "%BUILD_PY%" -m PyInstaller packaging\PhotoTimestampEditor.spec --noconfirm --clean || goto :failed
 
-REM The marker that tells the app to keep its settings and undo logs
-REM inside the folder rather than in AppData.
-echo This file makes the app portable: settings and undo logs are kept in the> "dist\PhotoTimestampEditor\portable.txt"
-echo "data" folder next to the program instead of in your Windows user profile.>> "dist\PhotoTimestampEditor\portable.txt"
-echo Delete this file if you would rather it used AppData.>> "dist\PhotoTimestampEditor\portable.txt"
+echo Checking the built app starts...
+"%BUILD_PY%" -c "import subprocess,sys; sys.exit(subprocess.run(['dist\\PhotoTimestampEditor\\PhotoTimestampEditor.exe','--selftest']).returncode)" || goto :selftest_failed
 
-copy /y packaging\READ-ME-FIRST.txt "dist\PhotoTimestampEditor\READ-ME-FIRST.txt" >nul
-
-for /f %%v in ('"%BUILD_PY%" -c "import photo_timestamp_editor as p; print(p.__version__)"') do set VERSION=%%v
-set ZIP=dist\PhotoTimestampEditor-%VERSION%-windows-x64.zip
-del "%ZIP%" 2>nul
-powershell -NoProfile -Command "Compress-Archive -Path 'dist\PhotoTimestampEditor' -DestinationPath '%ZIP%' -CompressionLevel Optimal" || goto :failed
+REM Shared with the GitHub Actions workflow so the ZIP is named in one place.
+"%BUILD_PY%" tools\package_portable.py || goto :failed
 
 echo.
 echo   Folder : dist\PhotoTimestampEditor\  (run PhotoTimestampEditor.exe)
-echo   ZIP    : %ZIP%
+echo   ZIP    : see the path printed above
 echo.
 echo Hand out the ZIP. Users extract it and double-click PhotoTimestampEditor.exe.
 pause
@@ -49,6 +45,16 @@ echo.
 echo Python 3.10 or newer is required to BUILD the app (not to run it).
 echo Download it from https://www.python.org/downloads/windows/
 echo and tick "Add python.exe to PATH" during setup.
+echo.
+echo Alternatively build it on GitHub: Actions tab -^> "Build Windows portable".
+echo.
+pause
+exit /b 1
+
+:selftest_failed
+echo.
+echo The app was built but would not start. Something the PyInstaller spec
+echo excludes in packaging\PhotoTimestampEditor.spec is actually needed.
 echo.
 pause
 exit /b 1

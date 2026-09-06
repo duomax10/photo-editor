@@ -542,3 +542,28 @@ def main() -> int:
     window = MainWindow()
     window.show()
     return app.exec()
+
+
+def selftest() -> int:
+    """Build the window without showing it, then exit.
+
+    Creating the QApplication is the part that loads Qt's platform plugin, so
+    this catches a packaged build whose Qt libraries were trimmed too hard.
+    Nothing is shown and no event loop runs, which keeps it usable on a CI
+    machine with no interactive desktop.
+    """
+    app = QApplication.instance() or QApplication([])
+    app.setApplicationName(APP_NAME)
+
+    icon = app_icon()
+    if icon.isNull():
+        sys.stderr.write("selftest: the application icon is missing from the bundle\n")
+        return 1
+
+    window = MainWindow()
+    if window.table.columnCount() != len(COLUMNS):
+        sys.stderr.write("selftest: the preview table did not build correctly\n")
+        return 1
+
+    sys.stderr.write(f"selftest: ok ({APP_NAME}, {len(icon.availableSizes())} icon sizes)\n")
+    return 0

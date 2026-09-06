@@ -69,19 +69,47 @@ The first launch shows **"Windows protected your PC"**. That box appears for
 any program without a paid code-signing certificate — click **More info →
 Run anyway**. It should only ask once.
 
-### Building the ZIP
+### Building the ZIP on GitHub (no Windows machine needed)
+
+The **Build Windows portable** workflow builds on a Windows runner.
+
+* **To test a build:** Actions tab → *Build Windows portable* → **Run
+  workflow**. The ZIP is attached to the run as an artifact; nothing is
+  published.
+* **To publish a release:** push a tag. The same build then creates a GitHub
+  Release with the ZIP attached, which is the link you can send people.
+
+  ```
+  git tag v1.0.0 && git push origin v1.0.0
+  ```
+
+  The tag must match `__version__` in `photo_timestamp_editor/__init__.py` —
+  the ZIP is named from the version, so a mismatch would produce a download
+  URL that disagrees with the tag. The workflow checks this and stops early
+  rather than publishing something inconsistent.
+
+The download URL is then predictable:
+
+```
+https://github.com/<owner>/<repo>/releases/download/v1.0.0/PhotoTimestampEditor-1.0.0-windows-x64.zip
+```
+
+### Building the ZIP locally
 
 You need [Python 3.10 or newer](https://www.python.org/downloads/windows/) on
 the machine doing the build (with "Add python.exe to PATH" ticked). Nobody you
 give the ZIP to needs it.
 
 Double-click **`build_windows.bat`**. It sets up an isolated build environment,
-runs PyInstaller, and leaves you with:
+runs PyInstaller, checks the result actually starts, and leaves you with:
 
 ```
 dist\PhotoTimestampEditor\                        the folder to run
 dist\PhotoTimestampEditor-1.0.0-windows-x64.zip   the folder, zipped, to hand out
 ```
+
+Both paths call `tools/package_portable.py` for the final step, so the ZIP is
+named in exactly one place.
 
 The build strips out everything Qt ships that a widgets app never touches —
 QtWebEngine alone is 195 MB — which takes the bundle down from roughly 650 MB
